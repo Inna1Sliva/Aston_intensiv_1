@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothHidDevice
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,17 +27,10 @@ import java.lang.Exception
 
 @Suppress("UNREACHABLE_CODE")
 class MusicPlayService : Service() {
-
     private lateinit var player: MediaPlayer
-
-
     private var currentTrackIndex: Int = -1
-    private var trackList: List<String> = emptyList()
-    private var isForegroundService: Boolean = false
-    private var serviceName: String = ""
-    private val notificationId: Int = 1
-    private val channel1Id: String = "channel_1"
-    private val channel1Name: String = "Music Channel"
+    private lateinit var audioManager: AudioManager
+    private lateinit var session: MediaSessionCompat
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -51,93 +45,145 @@ class MusicPlayService : Service() {
     intent?.let {
         when(it.action){
             Action.PLAY.toString() -> {
-                Log.e("servise", "play")
-                val trackName = it.getStringExtra(Extra.TRACK_NAME)
-                Log.e("servise", "${trackName}")
-
-                val trackIndex = it.getIntExtra(Extra.TRACK_INDEX, -1)
-                // val tracks = it.getStringArrayListExtra(Extra.TRACK_LIST)
-                //if (trackIndex >= 0 && trackIndex < tracks!!.size) {
-                //  trackList = tracks
-                //  currentTrackIndex = trackIndex
-                playTrack(trackIndex)
-
+                playTrack()
             }
 
-            Action.PAUSE.toString() -> {}
-            Action.NEXT.toString() -> {}
-            Action.PREVIOUS.toString() -> {}
+            Action.PAUSE.toString() -> {
+                TrackPause()
+            }
+            Action.NEXT.toString() -> {
+                val trackName = R.raw.michael_ackson_billie_jean
+                creatMediaPlay(trackName)
+                nextTrack()
+            }
+            Action.PREVIOUS.toString() -> {
+                Previous()
+            }
+            Action.TRACK.toString() ->{
+                val track = it.getIntExtra(Extra.TRACK_NAME,1)
+                creatMediaPlay(track)
+
+            }
 
         }
      }
     }
 
-    private fun playTrack(name:Int) {
-       player.reset()
-        try {
-            player =MediaPlayer.create(this,name)
-            player.start()
-        }catch (e:Exception){
-            e.printStackTrace()
+    private fun nextTrack() {
+        if (player.isPlaying){
+            player.stop()
+            playTrack()
+        }
+        player.reset()
+    }
+    private  fun Previous(){
+        if (player.isPlaying){
+            player.stop()
+            playTrack()
+        }
+        player.reset()
+    }
+
+    private fun creatMediaPlay(track:Int) {
+        player =MediaPlayer.create(this,track)
+    }
+
+    private fun TrackPause() {
+        if (player.isPlaying){
+            player.pause()
         }
     }
 
+    private fun playTrack() {
+        player.start()
 
+    }
 
-
- ///   private fun createNotification(trackName: String): Notification {
-      //  val intent = Intent(this, MainActivity::class.java)
-      //  val bundle = Bundle()
-      //  bundle.putString(Extra.TRACK_NAME, trackName)
-      //  intent.putExtras(bundle)
-      //  val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
-      //  TODO("Создаем интент для команды воспроизведения")
-
-       // val playIntent = Intent(this, MusicPlayService::class.java)
-        //playIntent.action = Action.PLAY_TRACK
-       // val playPendingIntent =
-         //   PendingIntent.getService(this, 0, playIntent, PendingIntent.FLAG_UPDATE_CURRENT)
-
-       // TODO("Создаем интент для команды паузы")
-      //  val pauseIntent = Intent(this, MusicPlayService::class.java)
-       // pauseIntent.action = Action.PAUSE_TRACK
-        //val pausePendingIntent =
-           // PendingIntent.getService(this, 0, pauseIntent, PendingIntent.FLAG_UPDATE_CURRENT)
-//
-        // Создаем интент для команды переключения на следующий трек
-        //val nextIntent = Intent(this, MusicPlayService::class.java)
-       // nextIntent.action = Action.NEXT_TRACK
-       // val nextPendingIntent =
-          //  PendingIntent.getService(this, 0, nextIntent, PendingIntent.FLAG_UPDATE_CURRENT)
-
-        // Создаем интент для команды переключения на предыдущий трек
-       // val previousIntent = Intent(this, MusicPlayService::class.java)
-        //previousIntent.action = Action.PREVIOUS_TRACK
-       // val previousPendingIntent =
-          //  PendingIntent.getService(this, 0, previousIntent, PendingIntent.FLAG_UPDATE_CURRENT)
-
-
-       // return notification
- //   }
 
     override fun onCreate() {
         super.onCreate()
         player = MediaPlayer()
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        session = MediaSessionCompat(this, "MusicService")
+        callback = object :Callback() {
+            override fun onPlay() {
+                playTrack()
+            }
+
+            override fun onPause() {
+                TrackPause()
+            }
+
+            override fun onSkipToNext() {
+                nextTrack()
+            }
+
+            override fun Previous() {
+                Previous()
+            }
+        }
+        session.setCallback(callback)
+        session.isActive = true
+
+        createNotificationChannel()
+        }
+
+    private fun createNotificationChannel(trackName:String){
+        val intent = Intent(this, MainActivity::class.java)
+        val bundle = Bundle()
+        bundle.putString(Extra.TRACK_NAME, trackName)
+        intent.putExtras(bundle)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
 
 
+        val playIntent = Intent(this, MusicPlayService::class.java)
+        playIntent.action = Action.PLAY.toString()
+        val playPendingIntent =
+            PendingIntent.getService(this, 0, playIntent, PendingIntent.FLAG_UPDATE_CURRENT)
+
+        val pauseIntent = Intent(this, MusicPlayService::class.java)
+        pauseIntent.action = Action.PAUSE.toString()
+        val pausePendingIntent =
+            PendingIntent.getService(this, 0, pauseIntent, PendingIntent.FLAG_UPDATE_CURRENT)
+
+        val nextIntent = Intent(this, MusicPlayService::class.java)
+        nextIntent.action = Action.NEXT.toString()
+        val nextPendingIntent =
+            PendingIntent.getService(this, 0, nextIntent, PendingIntent.FLAG_UPDATE_CURRENT)
+
+        val previousIntent = Intent(this, MusicPlayService::class.java)
+        previousIntent.action = Action.PREVIOUS.toString()
+        var previousPendingIntent =
+            PendingIntent.getService(this, 0, previousIntent, PendingIntent.FLAG_UPDATE_CURRENT)
+
+        val notification = NotificationCompat.Builder(this, "channel1Id")
+            .setContentTitle(getString(R.string.name))
+            .setContentText("trackName")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.michaelimage))
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .addAction(R.drawable.play_circle,"play", playPendingIntent)
+            .addAction(R.drawable.pause_circle,"pause",pausePendingIntent )
+            .addAction(R.drawable.skip_next,"next",nextPendingIntent )
+            .addAction(R.drawable.skip_next, "previus" , previousPendingIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setStyle(androidx.media.app.NotificationCompat.MediaStyle().setMediaSession(session.sessionToken))
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        val notificationManager =NotificationManagerCompat.from(this)
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+
+            return
+        }
+        notificationManager.notify(1, notification.build())
     }
 
-    fun setCurrentTrackIndex(index:Int){
-        currentTrackIndex = index
-    }
-    fun setTrackList(tracks: List<String>) {
-        trackList = tracks
-    }
-    fun getCurrentTrackIndex(): Int {
-        return currentTrackIndex
-    }
     enum class Action{
-        PLAY,PAUSE,NEXT,PREVIOUS
+        PLAY,PAUSE,NEXT,PREVIOUS, TRACK
     }
 
 
